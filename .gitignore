@@ -15,3 +15,4 @@ storage_state/
 cookie.json
 cookies.json
 storage-state.json.tmp
+.cloud-auth/

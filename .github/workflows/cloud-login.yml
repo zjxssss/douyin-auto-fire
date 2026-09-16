@@ -1,0 +1,78 @@
+name: Cloud Douyin Login
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: douyin-daily-sender
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  login:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOUYIN_STATE_KEY: ${{ secrets.DOUYIN_STATE_KEY }}
+      CLOUD_LOGIN_DIR: .cloud-auth/login
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Start fresh cloud browser
+        id: ready
+        shell: bash
+        run: |
+          test -n "$DOUYIN_STATE_KEY" || { echo "Missing DOUYIN_STATE_KEY"; exit 1; }
+          mkdir -p "$CLOUD_LOGIN_DIR"
+          nohup python -u scripts/cloud_login.py worker > "$CLOUD_LOGIN_DIR/worker.log" 2>&1 &
+          echo "$!" > "$CLOUD_LOGIN_DIR/worker.pid"
+          python scripts/cloud_login.py wait --ready --seconds 90
+      - uses: ./.github/actions/login-window
+        id: window1
+        if: steps.ready.outputs.phase != 'success'
+      - uses: ./.github/actions/login-window
+        id: window2
+        if: steps.window1.outputs.phase == 'waiting'
+      - uses: ./.github/actions/login-window
+        id: window3
+        if: steps.window2.outputs.phase == 'waiting'
+      - uses: ./.github/actions/login-window
+        id: window4
+        if: steps.window3.outputs.phase == 'waiting'
+      - uses: ./.github/actions/login-window
+        id: window5
+        if: steps.window4.outputs.phase == 'waiting'
+      - uses: ./.github/actions/login-window
+        id: window6
+        if: steps.window5.outputs.phase == 'waiting'
+      - uses: ./.github/actions/login-window
+        id: window7
+        if: steps.window6.outputs.phase == 'waiting'
+      - uses: ./.github/actions/login-window
+        id: window8
+        if: steps.window7.outputs.phase == 'waiting'
+      - name: Require verified login
+        shell: bash
+        run: |
+          test -s "$CLOUD_LOGIN_DIR/state.enc" || { echo "No verified login; scan a new QR in another run."; exit 1; }
+      - name: Save encrypted browser state
+        uses: actions/upload-artifact@v4
+        with:
+          name: douyin-auth-state
+          path: ${{ env.CLOUD_LOGIN_DIR }}/state.enc
+          retention-days: 90
+          if-no-files-found: error
+      - name: Close cloud browser
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$CLOUD_LOGIN_DIR/worker.pid"; then
+            kill "$(cat "$CLOUD_LOGIN_DIR/worker.pid")" 2>/dev/null || true
+          fi

@@ -1,0 +1,19 @@
+name: Publish encrypted login screen and wait
+description: Provides a short QR confirmation window without publishing credentials.
+outputs:
+  phase:
+    description: Current login phase
+    value: ${{ steps.wait.outputs.phase }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/upload-artifact@v4
+      with:
+        name: douyin-login-screen
+        path: ${{ env.CLOUD_LOGIN_DIR }}/screen.enc
+        retention-days: 1
+        overwrite: true
+        if-no-files-found: error
+    - id: wait
+      shell: bash
+      run: python scripts/cloud_login.py wait --seconds 45
