@@ -7,6 +7,10 @@ on:
         description: Only verify login and friends without sending
         type: boolean
         default: true
+      target_range:
+        description: Optional friend positions, e.g. 1 or 2-14; empty runs all
+        type: string
+        default: ""
   # 每天北京时间 13:10（UTC 05:10）。
   # 只有仓库变量 ENABLE_SCHEDULE=true 时才执行定时发送。
   schedule:
@@ -111,6 +115,33 @@ jobs:
               json.dumps({"accounts": accounts}, ensure_ascii=False, indent=2),
               encoding="utf-8",
           )
+          PY
+      - name: Select targets for a manual test
+        if: github.event_name == 'workflow_dispatch' && inputs.target_range != ''
+        env:
+          TARGET_RANGE: ${{ inputs.target_range }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+          if Path("config/accounts.json").exists():
+              raise SystemExit("按序号选择好友仅支持单账号模式")
+          selected = re.fullmatch(r"([1-9][0-9]*)(?:-([1-9][0-9]*))?", os.environ["TARGET_RANGE"].strip())
+          if not selected:
+              raise SystemExit("好友范围必须是正整数或范围，例如 1 或 2-14")
+          start = int(selected[1])
+          end = int(selected[2] or selected[1])
+          path = Path("config.json")
+          config = json.loads(path.read_text(encoding="utf-8"))
+          field = "targets" if "targets" in config else "friends"
+          targets = config.get(field)
+          if not isinstance(targets, list) or not 1 <= start <= end <= len(targets):
+              raise SystemExit("好友范围超出配置名单，请检查序号")
+          config[field] = targets[start - 1:end]
+          path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+          print(f"本次手动选择 {end - start + 1} 位好友；仓库 Secret 及每日完整名单不变")
           PY
       - name: Run
         shell: bash
