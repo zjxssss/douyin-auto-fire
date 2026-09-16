@@ -32,7 +32,7 @@ async def test_webhook():
         print('  export WEBHOOK_TEMPLATE=\'{"text": "测试消息"}\'  # 可选')
         return 1
 
-    print(f"📡 Webhook URL: {settings.webhook_url}")
+    print("📡 Webhook URL: 已配置（不显示凭据）")
     if settings.webhook_headers:
         print(f"📋 自定义 Headers: {len(settings.webhook_headers)} 个")
     if settings.webhook_template:

@@ -8,6 +8,50 @@ from app.models import TargetResult
 from app.notifier import build_webhook_payload, send_webhook_notification
 
 
+@pytest.mark.parametrize("body", [b'{"code": 19024, "msg": "secret"}', b'{}', b'[]', b'not-json'])
+def test_feishu_http_200_rejection_is_not_success(body):
+    from app.notifier import _post_json_webhook
+    with patch("app.notifier.urlopen") as request:
+        request.return_value.__enter__.return_value.read.return_value = body
+        with pytest.raises(RuntimeError, match="飞书") as error:
+            _post_json_webhook("https://open.feishu.cn/open-apis/bot/v2/hook/test", {}, {})
+        assert "secret" not in str(error.value)
+
+
+@pytest.mark.parametrize("body", [b'{"code": 0}', b'{"StatusCode": 0}'])
+def test_feishu_acknowledged_response(body):
+    from app.notifier import _post_json_webhook
+    with patch("app.notifier.urlopen") as request:
+        request.return_value.__enter__.return_value.read.return_value = body
+        _post_json_webhook("https://open.feishu.cn/open-apis/bot/v2/hook/test", {}, {})
+
+
+def test_generic_webhook_still_accepts_empty_response():
+    from app.notifier import _post_json_webhook
+    with patch("app.notifier.urlopen") as request:
+        request.return_value.__enter__.return_value.read.return_value = b""
+        _post_json_webhook("https://example.com/webhook", {}, {})
+
+
+def test_feishu_signature_uses_timestamp_and_does_not_mutate_payload(monkeypatch):
+    import base64
+    import hashlib
+    import hmac
+    import json
+    from app.notifier import _post_json_webhook
+    monkeypatch.setenv("FEISHU_SECRET", "test-secret")
+    monkeypatch.setattr("app.notifier.time.time", lambda: 1700000000)
+    payload = {"msg_type": "text", "content": {"text": "test"}}
+    with patch("app.notifier.urlopen") as request:
+        request.return_value.__enter__.return_value.read.return_value = b'{"code": 0}'
+        _post_json_webhook("https://open.feishu.cn/open-apis/bot/v2/hook/test", payload, {})
+        sent = json.loads(request.call_args.args[0].data)
+    expected = base64.b64encode(hmac.new(b"1700000000\ntest-secret", b"", hashlib.sha256).digest()).decode()
+    assert sent["timestamp"] == "1700000000"
+    assert sent["sign"] == expected
+    assert "sign" not in payload
+
+
 def test_build_webhook_payload_default():
     """测试默认 Webhook 负载构建。"""
     results = [

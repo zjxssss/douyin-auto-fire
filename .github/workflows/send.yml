@@ -31,6 +31,7 @@ jobs:
       WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
       WEBHOOK_HEADERS: ${{ secrets.WEBHOOK_HEADERS }}
       WEBHOOK_TEMPLATE: ${{ secrets.WEBHOOK_TEMPLATE }}
+      FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
       HEADLESS: "true"
       TRACE: "false"
     steps:

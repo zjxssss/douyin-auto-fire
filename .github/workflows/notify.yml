@@ -1,0 +1,41 @@
+name: Test Feishu Notification
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: Notification text (does not send Douyin messages)
+        type: string
+        default: "抖音续火花：飞书通知连接测试成功。本次仅测试通知，不发送抖音消息。"
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Send and verify Feishu notification
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
+          NOTIFICATION_TEXT: ${{ inputs.message }}
+        run: |
+          python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          from app.notifier import _post_json_webhook
+          url = os.environ.get("WEBHOOK_URL", "").strip()
+          parsed = urlsplit(url)
+          if (parsed.scheme != "https" or parsed.hostname not in {"open.feishu.cn", "open.larksuite.com"}
+                  or not parsed.path.startswith("/open-apis/bot/v2/hook/")):
+              raise SystemExit("请将飞书自定义机器人的完整地址保存到 WEBHOOK_URL Secret")
+          payload = {"msg_type": "text", "content": {"text": os.environ["NOTIFICATION_TEXT"]}}
+          _post_json_webhook(url, payload, {"Content-Type": "application/json; charset=utf-8"})
+          print("飞书已确认接收通知；未发送抖音消息。")
+          PY

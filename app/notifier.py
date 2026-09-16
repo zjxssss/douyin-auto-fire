@@ -297,6 +297,17 @@ def _replace_template_vars(obj, variables: dict[str, str | int | list]):
 
 def _post_json_webhook(url: str, payload: dict, headers: dict[str, str]) -> None:
     """发送 JSON 到通用 Webhook。"""
+    parsed = urlsplit(url)
+    is_feishu = (
+        parsed.scheme == "https"
+        and parsed.hostname in {"open.feishu.cn", "open.larksuite.com"}
+        and parsed.path.startswith("/open-apis/bot/v2/hook/")
+    )
+    if is_feishu and (secret := os.getenv("FEISHU_SECRET", "").strip()):
+        timestamp = str(int(time.time()))
+        key = f"{timestamp}\n{secret}".encode("utf-8")
+        sign = base64.b64encode(hmac.new(key, b"", hashlib.sha256).digest()).decode()
+        payload = {**payload, "timestamp": timestamp, "sign": sign}
     request = Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -305,5 +316,16 @@ def _post_json_webhook(url: str, payload: dict, headers: dict[str, str]) -> None
     )
     with urlopen(request, timeout=15) as response:
         body = response.read().decode("utf-8")
-    # 通用 Webhook 不对响应做严格校验，只要 HTTP 状态码是 2xx 就认为成功
-    # 如果需要校验响应内容，可以在这里添加
+    # 飞书会用 HTTP 200 返回关键词或签名校验失败，必须检查业务状态码。
+    if is_feishu:
+        try:
+            result = json.loads(body)
+        except (json.JSONDecodeError, UnicodeError) as exc:
+            raise RuntimeError("飞书返回无效响应，通知未确认送达") from exc
+        if not isinstance(result, dict):
+            raise RuntimeError("飞书返回无效响应，通知未确认送达")
+        code = result.get("code", result.get("StatusCode"))
+        if type(code) is not int or code != 0:
+            # 不回显响应正文，避免第三方错误文本泄露 Webhook 或消息内容。
+            safe_code = code if type(code) is int else "unknown"
+            raise RuntimeError(f"飞书通知未送达，错误码: {safe_code}，请检查机器人安全设置")
