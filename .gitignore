@@ -12,3 +12,6 @@ config/tasks/
 config.json
 storage-state.json
 storage_state/
+cookie.json
+cookies.json
+storage-state.json.tmp
