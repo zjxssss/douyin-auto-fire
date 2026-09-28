@@ -51,7 +51,7 @@ jobs:
           stamp = now.strftime('%Y%m%d:') + ('1310' if mode == 'WAKE' else now.strftime('%H%M'))
           digest = hmac.new(key.encode(), (mode + ':' + stamp).encode(), hashlib.sha256).digest()[:12]
           token = base64.urlsafe_b64encode(digest).decode().rstrip('=')
-          text = '抖音续火花' + ('T' if mode == 'TEST' else 'D') + token
+          text = '抖音续火花：' + ('T' if mode == 'TEST' else 'D') + token
           body = {'msg_type': 'text', 'content': {'text': text}}
           secret = os.environ.get('FEISHU_SECRET', '')
           if secret:
