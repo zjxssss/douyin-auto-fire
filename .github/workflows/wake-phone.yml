@@ -7,12 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "TEST only verifies phone unlock; no Douyin message."
+        description: "TEST: unlock only. FRIEND1: send one fire emoji to 阿欣; requires phone arming."
         required: true
         default: TEST
         type: choice
         options:
           - TEST
+          - FRIEND1
 
 permissions:
   contents: read
@@ -40,7 +41,7 @@ jobs:
           from datetime import datetime, timedelta, timezone
           now = datetime.now(timezone(timedelta(hours=8)))
           mode = os.environ['MODE']
-          if mode not in ('TEST', 'WAKE'):
+          if mode not in ('TEST', 'FRIEND1', 'WAKE'):
               raise SystemExit('Unsupported mode')
           if mode == 'WAKE' and not (790 <= now.hour * 60 + now.minute <= 880):
               raise SystemExit('Outside daily delivery window')
@@ -51,7 +52,7 @@ jobs:
           stamp = now.strftime('%Y%m%d:') + ('1310' if mode == 'WAKE' else now.strftime('%H%M'))
           digest = hmac.new(key.encode(), (mode + ':' + stamp).encode(), hashlib.sha256).digest()[:12]
           token = base64.urlsafe_b64encode(digest).decode().rstrip('=')
-          text = '抖音续火花：' + ('T' if mode == 'TEST' else 'D') + token
+          text = '抖音续火花：' + {'TEST': 'T', 'FRIEND1': 'A', 'WAKE': 'D'}[mode] + token
           body = {'msg_type': 'text', 'content': {'text': text}}
           secret = os.environ.get('FEISHU_SECRET', '')
           if secret:
