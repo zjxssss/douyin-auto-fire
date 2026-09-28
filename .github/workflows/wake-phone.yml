@@ -1,0 +1,80 @@
+name: Signal phone for Douyin fire
+
+on:
+  schedule:
+    # 北京时间每天 13:10（UTC 05:10）
+    - cron: "10 5 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Only TEST is available for manual runs; it unlocks but does not send any Douyin message."
+        required: true
+        default: TEST
+        type: choice
+        options:
+          - TEST
+
+permissions:
+  contents: read
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+      FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
+      PHONE_WAKE_HMAC_KEY: ${{ secrets.PHONE_WAKE_HMAC_KEY }}
+      MODE: ${{ github.event_name == 'schedule' && 'WAKE' || inputs.mode }}
+    steps:
+      - name: Send signed Feishu wake signal
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64
+          import hashlib
+          import hmac
+          import json
+          import os
+          import time
+          from datetime import datetime
+          from urllib.parse import urlsplit
+          from urllib.request import Request, urlopen
+          from zoneinfo import ZoneInfo
+
+          mode = os.environ["MODE"].strip().upper()
+          if mode not in {"WAKE", "TEST"}:
+              raise SystemExit("Invalid mode")
+          webhook = os.environ.get("WEBHOOK_URL", "").strip()
+          parsed = urlsplit(webhook)
+          if (parsed.scheme != "https" or parsed.hostname not in {"open.feishu.cn", "open.larksuite.com"}
+                  or not parsed.path.startswith("/open-apis/bot/v2/hook/")):
+              raise SystemExit("WEBHOOK_URL is not a valid Feishu bot webhook")
+          key = os.environ.get("PHONE_WAKE_HMAC_KEY", "").strip()
+          if len(key) < 32:
+              raise SystemExit("PHONE_WAKE_HMAC_KEY is missing")
+
+          now = datetime.now(ZoneInfo("Asia/Shanghai"))
+          signal = f"DFA_{mode}:{now:%Y%m%d}:{now:%H%M}"
+          signature = hmac.new(key.encode("utf-8"), signal.encode("utf-8"), hashlib.sha256).hexdigest()
+          payload = {"msg_type": "text", "content": {"text": f"抖音续火花：{signal}:{signature}"}}
+
+          feishu_secret = os.environ.get("FEISHU_SECRET", "").strip()
+          if feishu_secret:
+              timestamp = str(int(time.time()))
+              signing_key = f"{timestamp}\n{feishu_secret}".encode("utf-8")
+              payload["timestamp"] = timestamp
+              payload["sign"] = base64.b64encode(hmac.new(signing_key, b"", hashlib.sha256).digest()).decode("utf-8")
+
+          request = Request(
+              webhook,
+              data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+              headers={"Content-Type": "application/json; charset=utf-8"},
+              method="POST",
+          )
+          with urlopen(request, timeout=15) as response:
+              result = json.loads(response.read().decode("utf-8"))
+          if result.get("code") != 0:
+              raise SystemExit(f"Feishu rejected the signal: code={result.get('code', 'unknown')}")
+          print(f"Signed {mode} signal accepted by Feishu at {now.isoformat()}")
+          PY
