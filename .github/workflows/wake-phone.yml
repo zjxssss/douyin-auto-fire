@@ -2,7 +2,7 @@ name: Signal phone for Douyin fire
 
 on:
   schedule:
-    # Beijing 13:10. Disabled until phone validation passes.
+    # Beijing 13:10; delayed delivery allowed before 22:00 the same day.
     - cron: "10 5 * * *"
   workflow_dispatch:
     inputs:
@@ -43,26 +43,36 @@ jobs:
           mode = os.environ['MODE']
           if mode not in ('TEST', 'FRIEND1', 'WAKE'):
               raise SystemExit('Unsupported mode')
-          if mode == 'WAKE' and not (790 <= now.hour * 60 + now.minute <= 880):
-              raise SystemExit('Outside daily delivery window')
           key = os.environ['PHONE_WAKE_HMAC_KEY']
           webhook = os.environ['WEBHOOK_URL']
           if not key or not webhook:
               raise SystemExit('Missing phone key or webhook')
+          
+          def send_text(text):
+              body = {'msg_type': 'text', 'content': {'text': text}}
+              secret = os.environ.get('FEISHU_SECRET', '')
+              if secret:
+                  timestamp = str(int(time.time()))
+                  sign = base64.b64encode(hmac.new((timestamp + '\n' + secret).encode(), b'', hashlib.sha256).digest()).decode()
+                  body.update(timestamp=timestamp, sign=sign)
+              request = urllib.request.Request(webhook, data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      result = json.load(response)
+              except Exception:
+                  raise SystemExit('Feishu request failed; webhook details omitted') from None
+              code = result.get('code', result.get('StatusCode', -1))
+              if str(code) != '0':
+                  raise SystemExit('Feishu rejected notification, code=' + str(code))
+          
+          minutes = now.hour * 60 + now.minute
+          if mode == 'WAKE' and not (790 <= minutes < 1320):
+              send_text('抖音续火花：' + now.strftime('%Y-%m-%d %H:%M') + ' 定时任务到达时已超出当天 13:10–22:00 发送时段，已跳过发送。')
+              raise SystemExit('Outside daily delivery window; Feishu skip notification accepted')
           stamp = now.strftime('%Y%m%d:') + ('1310' if mode == 'WAKE' else now.strftime('%H%M'))
           digest = hmac.new(key.encode(), (mode + ':' + stamp).encode(), hashlib.sha256).digest()[:12]
           token = base64.urlsafe_b64encode(digest).decode().rstrip('=')
           text = '抖音续火花：' + {'TEST': 'T', 'FRIEND1': 'A', 'WAKE': 'D'}[mode] + token
-          body = {'msg_type': 'text', 'content': {'text': text}}
-          secret = os.environ.get('FEISHU_SECRET', '')
-          if secret:
-              timestamp = str(int(time.time()))
-              sign = base64.b64encode(hmac.new((timestamp + '\n' + secret).encode(), b'', hashlib.sha256).digest()).decode()
-              body.update(timestamp=timestamp, sign=sign)
-          request = urllib.request.Request(webhook, data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
-          with urllib.request.urlopen(request, timeout=20) as response:
-              result = json.load(response)
-          if result.get('code', result.get('StatusCode', -1)) != 0:
-              raise SystemExit('Feishu rejected signal, code=' + str(result.get('code', result.get('StatusCode'))))
+          send_text(text)
           print('Feishu accepted compact signal. Phone receipt and unlock still require verification.')
           PY
