@@ -7,13 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "TEST: unlock only. FRIEND1: send one fire emoji to 阿欣; requires phone arming."
+        description: "TEST: unlock only. FRIEND1: armed test to 阿欣. DAILY: send today, 13:10-22:00 Beijing; skips sent friends."
         required: true
         default: TEST
         type: choice
         options:
           - TEST
           - FRIEND1
+          - DAILY
 
 permissions:
   contents: read
@@ -31,7 +32,7 @@ jobs:
       WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
       FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
       PHONE_WAKE_HMAC_KEY: ${{ secrets.PHONE_WAKE_HMAC_KEY }}
-      MODE: ${{ github.event_name == 'schedule' && 'WAKE' || inputs.mode }}
+      MODE: ${{ (github.event_name == 'schedule' || inputs.mode == 'DAILY') && 'WAKE' || inputs.mode }}
     steps:
       - name: Send compact signed signal (delivery is not unlock confirmation)
         shell: bash
